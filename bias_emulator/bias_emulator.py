@@ -4,6 +4,7 @@ import cffi, glob, os, inspect, pickle, warnings
 import scipy.optimize as op
 from scipy.interpolate import InterpolatedUnivariateSpline as IUS
 import george
+import pyccl as ccl
 
 #Create the CFFI library
 bias_dir = os.path.dirname(__file__)
@@ -206,36 +207,28 @@ class bias_emulator(Aemulator):
         :return:
             None
         """
-        try:
-            from classy import Class
-        except ImportError:
-            print("Class not installed. Cannot compute the bias directly, only predict "+
-                  "parameters from the GPs using the predict() function.")
-            return
+        
+        #DHAYAA: I rewrite all of this to use pyccl instead of classy
+        
         self.bias_slopes_and_intercepts = self.predict(params)
+        
         #Set up a CLASS dictionary
         self.h = params['H0']/100.
         self.Omega_m = (params["omega_b"]+params["omega_cdm"])/self.h**2
-        class_cosmology = {
-            'output': 'mPk',
-            'H0':           params['H0'],
-            'ln10^{10}A_s': params['ln10As'],
-            'n_s':          params['n_s'],
-            'w0_fld':       params['w0'],
-            'wa_fld':       0.0,
-            'omega_b':      params['omega_b'],
-            'omega_cdm':    params['omega_cdm'],
-            'Omega_Lambda': 1 - self.Omega_m,
-            'N_eff':        params['N_eff'],
-            'P_k_max_1/Mpc': 10.,
-            'z_max_pk':      5.03
-        }
-        #Seed splines in CLASS
-        cc = Class()
-        cc.set(class_cosmology)
-        cc.compute()
+        
+        cosmo = ccl.Cosmology(Omega_c = params['omega_cdm']/self.h**2, 
+                              Omega_b = params['omega_b']/self.h**2, 
+                              h       = self.h,
+                              A_s     = np.exp(params['ln10As'])/1e10, 
+                              n_s     = params['n_s'],
+                              w       = params['w0'],
+                              wa      = 0.0,
+                              Neff    = params['N_eff'],
+                              transfer_function = 'boltzmann_camb', matter_power_spectrum='linear')
+        cosmo.compute_linear_power()
+
         #Make everything attributes
-        self.cc = cc
+        self.cc = cosmo
         self.k = np.logspace(-5, 1, num=1000) # Mpc^-1 comoving
         self.M = np.logspace(10, 16.5, num=1000) # Msun/h
         self.computed_sigma2      = {}
@@ -278,7 +271,7 @@ class bias_emulator(Aemulator):
         for i,z in enumerate(np.atleast_1d(redshifts)):
             if z in self.computed_sigma2.keys():
                 continue
-            p = np.array([self.cc.pk_lin(ki, z) for ki in k])*h**3 #[Mpc/h]^3
+            p = ccl.linear_matter_power(self.cc, k, a = 1/(1 + z))*h**3 #[Mpc/h]^3
             sigma2    = np.zeros_like(M)
             _lib.sigma2_at_M_arr(   _dc(M), NM, _dc(kh), _dc(p), Nk, Omega_m, _dc(sigma2))
             self.computed_sigma2[z] = sigma2
