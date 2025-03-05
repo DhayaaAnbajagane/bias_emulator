@@ -221,7 +221,7 @@ class bias_emulator(Aemulator):
                               h       = self.h,
                               A_s     = np.exp(params['ln10As'])/1e10, 
                               n_s     = params['n_s'],
-                              w       = params['w0'],
+                              w0      = params['w0'],
                               wa      = 0.0,
                               Neff    = params['N_eff'],
                               transfer_function = transfer_function, matter_power_spectrum='linear')
