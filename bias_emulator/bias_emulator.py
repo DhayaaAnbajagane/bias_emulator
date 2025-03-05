@@ -197,7 +197,7 @@ class bias_emulator(Aemulator):
         return np.dot(self.rotation_matrix, output).flatten()
 
 
-    def set_cosmology(self, params):
+    def set_cosmology(self, params, transfer_function = 'boltzmann_camb'):
         """
         Set the cosmological parameters of the emulator. One must
         call this function before actually computing the bias.
@@ -224,9 +224,11 @@ class bias_emulator(Aemulator):
                               w       = params['w0'],
                               wa      = 0.0,
                               Neff    = params['N_eff'],
-                              transfer_function = 'boltzmann_camb', matter_power_spectrum='linear')
-        cosmo.compute_linear_power()
-
+                              transfer_function = transfer_function, matter_power_spectrum='linear')
+        
+        cosmo._pk_lin = {}
+        cosmo._pk_nl  = {}
+    
         #Make everything attributes
         self.cc = cosmo
         self.k = np.logspace(-5, 1, num=1000) # Mpc^-1 comoving
@@ -268,6 +270,10 @@ class bias_emulator(Aemulator):
         Nk = len(k)
         NM = len(M)
         kh = k/h #h/Mpc
+        
+        #Compute linear power in here to avoid pickling problems.
+        self.cc.compute_linear_power()
+
         for i,z in enumerate(np.atleast_1d(redshifts)):
             if z in self.computed_sigma2.keys():
                 continue
@@ -279,6 +285,11 @@ class bias_emulator(Aemulator):
             self.computed_peak_height[z] = 1.686/np.sqrt(sigma2)
             self.computed_pk[z]          = p
             continue
+            
+        #Remove any swigpy objects so you don't get other pickling errors....
+        self.cc._pk_lin = {}
+        self.cc._pk_nl  = {}
+        
         return
 
     def bias(self, Masses, redshifts, delta=200):
